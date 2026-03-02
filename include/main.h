@@ -76,5 +76,10 @@ void opcontrol(void);
  */
 //#include <iostream>
 #endif
+#include "lemlib/api.hpp" // IWYU pragma: keep
+#include "mvlib/Optional/logger_optional_lemlib.hpp" 
+#include "mvlib/core.hpp"
+#include "screen.hpp" 
+#include "globals.hpp"
 
 #endif  // _PROS_MAIN_H_
