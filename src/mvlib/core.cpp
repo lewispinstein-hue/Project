@@ -102,15 +102,17 @@ void Logger::logMessage(LogLevel level, const char *fmt, ...) {
 }
 
 static void ensureLogDirExists() {
+  const char *folderName = "/usd/logs";
   struct stat st;
-  if (stat("/usd/logs", &st) != 0) {
-    mkdir("/usd/logs", 0777);
-  }
+  if (stat(folderName, &st) != 0) {
+    mkdir(folderName, 0777);
+    LOG_DEBUG("Making directory: %s for logging", folderName);
+  } else LOG_DEBUG("Logging directory: %s already exists. Skipping creation", folderName);
 }
 
 void Logger::m_makeTimestampedFilename() {
   time_t now = time(0);
-  struct tm *tstruct = localtime(&now);
+  tm *tstruct = localtime(&now);
 
   if (tstruct->tm_year < 100) {
     LOG_DEBUG("VEX RTC Inaccurate. Falling back to program duration and last upload date.");
@@ -234,16 +236,14 @@ void Logger::start() {
       m_config.logToSD.store(false);
       m_sdLocked = true;
       LOG_FATAL("initSDCard failed! Unable to initialize SD card.");
-    } else {
-      LOG_INFO("Successfully initialized SD card with filename: %s!", m_currentFilename);
-    }
+    } else LOG_INFO("Successfully initialized SD card with filename: /logs/%s!", m_currentFilename);
   }
     
   // Check config
   m_configValid = m_checkRobotConfig();
-  if (!m_configValid) LOG_ERROR("At least one pointer set by setRobot(Drivetrain ref) is nullptr. "
-                                "Using speed estamation instead.");
-  else LOG_INFO("All pointers set by setRobot(Drivetrain ref) seem to be valid.");
+  if (!m_configValid) LOG_ERROR("At least one pointer set by setRobot(Drivetrain) is nullptr. "
+                                "Using speed estimation instead.");
+  else LOG_INFO("All pointers set by setRobot(Drivetrain) seem to be valid.");
 
   // Create task that runs Update
   m_task = std::make_unique<pros::Task>([this]() mutable {
@@ -304,14 +304,6 @@ void Logger::Update() {
   static double leftVelocity, rightVelocity;
 
   if (m_configValid) {
-    pros::MotorGears leftGearing = m_pLeftDrivetrain 
-                     ? m_pLeftDrivetrain->get_gearing() 
-                     : pros::MotorGears::invalid;
-
-    pros::MotorGears rightGearing = m_pRightDrivetrain 
-                     ? m_pRightDrivetrain->get_gearing() 
-                     : pros::MotorGears::invalid;
-
     static auto getGearsetValue = [&](pros::MotorGears gearset) {
       switch (gearset) {
         case pros::MotorGears::rpm_100: return 100.0; break;
@@ -327,6 +319,14 @@ void Logger::Update() {
       if (v < -127) v = -127;
       return v;
     };
+
+    pros::MotorGears leftGearing = m_pLeftDrivetrain 
+                     ? m_pLeftDrivetrain->get_gearing()
+                     : pros::MotorGears::invalid;
+
+    pros::MotorGears rightGearing = m_pRightDrivetrain
+                     ? m_pRightDrivetrain->get_gearing()
+                     : pros::MotorGears::invalid;
 
     // Update drivetrain speed
     leftVelocity = norm(m_pLeftDrivetrain->get_actual_velocity(), leftGearing);
@@ -345,6 +345,7 @@ void Logger::Update() {
     double vx = (dt > 0) ? pose->x - prevPose.x / dt : 0.0; // x velocity
     double vy = (dt > 0) ? pose->y - prevPose.y / dt : 0.0; // y velocity
 
+    // Update drivetrain speed
     avgSpeed = (vx + vy) / 2.0;
     leftVelocity = avgSpeed;
     rightVelocity = avgSpeed;
@@ -353,16 +354,15 @@ void Logger::Update() {
     prevMs = nowMs;
   }
 
-  if (m_getPose) {
-    auto pose = m_getPose();
-    if (!pose) return;
-
-    float normalizedTheta = fmod(pose->theta, 360.0); // Normalize theta 
-    if (normalizedTheta < 0) normalizedTheta += 360.0;
-
-    LOG_INFO("[DATA],%d,%.2f,%.2f,%.2f,%.1f,%.1f", 
-              pros::millis(), pose->x, pose->y, normalizedTheta,
-              leftVelocity, rightVelocity);
-  }
+  auto pose = m_getPose ? m_getPose() : std::nullopt;
+  if (!pose) return;
+  
+  double normalizedTheta = fmod(pose->theta, 360.0); // Normalize theta 
+  if (normalizedTheta < 0) normalizedTheta += 360.0;
+  
+  // Print main telemetry
+  LOG_INFO("[DATA],%d,%.2f,%.2f,%.2f,%.1f,%.1f", 
+            pros::millis(), pose->x, pose->y, normalizedTheta,
+            leftVelocity, rightVelocity);
 }
 } // namespace mvlib

@@ -3,53 +3,6 @@
 #include "mvlib/core.hpp"
 #include <cstdint>
 
-template<class T>
-requires std::is_arithmetic_v<T>
-constexpr float toFloat(T v) { return static_cast<float>(std::floor(v + 0.5)); }
-
-struct simPose {
-  double x;
-  double y;
-  double theta;
-}; simPose simpose{0, 0, 0};
-
-inline const simPose getSimPose() { return simpose; }
-
-void updateSimPose() { 
-  chassis.setPose(toFloat(simpose.x), 
-                  toFloat(simpose.y), 
-                  toFloat(simpose.theta)); 
-}
-
-void setSimPose(const simPose pose) {
-  simpose.x = pose.x;
-  simpose.y = pose.y;
-  simpose.theta = pose.theta;
-}
-
-simPose userPose{0, 0, 0};
-static uint32_t lastSimUpdate = 0;
-constexpr uint16_t SIM_DEBOUNCE_MS = 150;
-bool simMode = false;
-void moveSimPose() {
-  if (pros::millis() - lastSimUpdate < SIM_DEBOUNCE_MS) return;
-  lastSimUpdate = pros::millis();
-  // use arrow keys to move, B to update, and L1/L2 to turn
-  if (controller.get_digital(DIGITAL_LEFT)) userPose.x -= 1;
-  else if (controller.get_digital(DIGITAL_RIGHT)) userPose.x += 1;
-  if (controller.get_digital(DIGITAL_UP)) userPose.y += 1;
-  else if (controller.get_digital(DIGITAL_DOWN)) userPose.y -= 1;
-  if (controller.get_digital(DIGITAL_L1)) userPose.theta += 1;
-  else if (controller.get_digital(DIGITAL_L2)) userPose.theta -= 1;
-
-  if (controller.get_digital_new_press(DIGITAL_B)) simMode = !simMode;
-
-  if (simMode) {
-    setSimPose({userPose.x, userPose.y, userPose.theta}); // Set the pose
-    updateSimPose(); // Then update it
-  }
-}
-
 void initialize() {
   mvlib::setOdom(logger, &chassis);
   logger.setRobot({
@@ -91,14 +44,14 @@ void autonomous() {}
 void opcontrol() {
   const uint8_t deadband = 10;
   while (true) {
-    handleMisc();
+    handleController();
     
-    double LEFT_Y = controller.get_analog(ANALOG_LEFT_Y);
-    double RIGHT_X = controller.get_analog(ANALOG_RIGHT_X);
-
+    float LEFT_Y = controller.get_analog(ANALOG_LEFT_Y);
+    float RIGHT_X = controller.get_analog(ANALOG_RIGHT_X);
+    
     LEFT_Y = expoForward(LEFT_Y, 1.9, deadband);
     RIGHT_X = expoTurn(RIGHT_X, 2.8, deadband);
-
+    
     chassis.arcade(LEFT_Y, RIGHT_X, false, 0.4);
     pros::delay(20);
   }

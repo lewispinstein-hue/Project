@@ -27,7 +27,7 @@ void Manager::drawCapsule(int x, int y, int width, int height,
   pros::screen::fill_circle(x + width - radius, y + radius, radius);
   pros::screen::fill_rect(x + radius, y, x + width - radius, y + height);
 
-  // --- STEP 2: The Outlines ---
+  // --- The outlines ---
   pros::screen::set_pen(borderColor);
 
   // Draw the full circle outlines at both ends
@@ -96,14 +96,14 @@ ButtonId Manager::waitForBottomButtonTap(uint32_t timeout) {
     if (touch.release_count > last_release_count) {
       last_release_count = touch.release_count;
       if (final_x != -1 && final_y != -1) {
-        if (isInside(final_x, final_y, getX(ButtonId::LEFT), BTN_Y, BTN_WIDTH,
-                     BTN_HEIGHT))
+        if (isInside(final_x, final_y, getX(ButtonId::LEFT), 
+                     BTN_Y, BTN_WIDTH, BTN_HEIGHT))
           return ButtonId::LEFT;
-        if (isInside(final_x, final_y, getX(ButtonId::MIDDLE), BTN_Y, BTN_WIDTH,
-                     BTN_HEIGHT))
+        if (isInside(final_x, final_y, getX(ButtonId::MIDDLE), 
+                     BTN_Y, BTN_WIDTH, BTN_HEIGHT))
           return ButtonId::MIDDLE;
-        if (isInside(final_x, final_y, getX(ButtonId::RIGHT), BTN_Y, BTN_WIDTH,
-                     BTN_HEIGHT))
+        if (isInside(final_x, final_y, getX(ButtonId::RIGHT), 
+                     BTN_Y, BTN_WIDTH, BTN_HEIGHT))
           return ButtonId::RIGHT;
       }
       final_x = -1;
@@ -118,12 +118,11 @@ bool Manager::waitForScreenTouch(uint32_t timeoutMs, bool detectTouchOnly) {
   uint32_t start = pros::millis();
   int32_t initialRelease = pros::screen::touch_status().release_count;
 
-  while (((uint32_t)pros::millis() - start) < timeoutMs) {
+  while ((pros::millis() - start) < timeoutMs) {
     auto status = pros::screen::touch_status();
-    if (detectTouchOnly && status.touch_status == pros::E_TOUCH_HELD)
-      return true;
-    if (!detectTouchOnly && status.release_count > initialRelease)
-      return true;
+
+    if (detectTouchOnly && status.touch_status == pros::E_TOUCH_HELD) return true;
+    if (!detectTouchOnly && status.release_count > initialRelease) return true;
     pros::delay(20);
   }
   return false;

@@ -49,6 +49,7 @@
 #include <optional>
 #include <atomic>
 #include <optional>
+#include <sys/_intsup.h>
 #include <utility>
 
 #define _LOGGER_CORE
@@ -178,13 +179,32 @@ enum class LogLevel {
   FATAL     /// Used only for serious failures; often precedes a force stop.
 }; 
 
-/// @brief SD file flush interval (ms). At 1000ms (default), SD card flushes out of RAM every 1 second.
-constexpr uint32_t SD_FLUSH_INTERVAL_MS = 1000;
-
 // ---------- Generic variable watches ----------
 
 /// @brief Identifier for a registered watch entry.
 using WatchId = uint64_t;
+
+/**
+ * @struct LevelOverride
+ * @brief Optional log-level override applied to a watch sample.
+ *
+ * A watch has a base log level (e.g., INFO). If predicate(expression) evaluates to
+ * true, the watch sample is emitted at elevatedLevel instead.
+ *
+ * Where to use it:
+ * - In watches where you want "normal" printing at INFO, but highlight abnormal
+ *   values at WARN/ERROR.
+ */
+template<class T> struct LevelOverride {
+  /// @brief Level used when predicate returns true.
+  LogLevel elevatedLevel = LogLevel::WARN;
+
+  /// @brief Predicate to decide if a sample should be emitted at elevatedLevel.
+  std::function<bool(const T &)> predicate;
+
+  /// @brief An optional label that prints instead of the regular when the predicate is true.
+  std::string label;
+};
 
 /**
  * @def PREDICATE
@@ -200,28 +220,6 @@ using WatchId = uint64_t;
 mvlib::asPredicate<int32_t>([](int32_t v) { return func; })
 
 /**
- * @struct LevelOverride
- * @brief Optional log-level override applied to a watch sample.
- *
- * A watch has a base log level (e.g., INFO). If predicate(expression) evaluates to
- * true, the watch sample is emitted at elevatedLevel instead.
- *
- * Where to use it:
- * - In watches where you want "normal" printing at INFO, but highlight abnormal
- *   values at WARN/ERROR.
- */
-template <class T> struct LevelOverride {
-  /// @brief Level used when predicate returns true.
-  LogLevel elevatedLevel = LogLevel::WARN;
-
-  /// @brief Predicate to decide if a sample should be emitted at elevatedLevel.
-  std::function<bool(const T &)> predicate;
-
-  /// @brief An optional label that prints instead of the regular when the predicate is true.
-  std::string label;
-};
-
-/**
  * @brief Convert an arbitrary predicate callable into std::function<bool(const T&)>.
  *
  * Where to use it:
@@ -233,8 +231,8 @@ template <class T> struct LevelOverride {
  * \return A std::function wrapper calling p(const T&).
  */
 template<class T, class Pred>
-std::function<bool(const T &)> asPredicate(Pred &&p) {
-  return std::function<bool(const T &)>(std::forward<Pred>(p));
+std::function<bool(const T&)> asPredicate(Pred &&p) {
+  return std::function<bool(const T&)>(std::forward<Pred>(p));
 }
 
 /**
@@ -270,9 +268,9 @@ public:
    * @note Most fields are atomic so they can be toggled while running.
    */
   struct loggerConfig {
-    std::atomic<bool> logToTerminal{true};               ///< @brief Print logs to the terminal.
-    std::atomic<bool> logToSD{true};                     ///< @brief Write logs to SD (locked after logger start).
-    std::atomic<bool> printWatches{true};                ///< @brief Print registered watches.
+    std::atomic<bool> logToTerminal{true};  ///< @brief Print logs to the terminal.
+    std::atomic<bool> logToSD{true};        ///< @brief Write logs to SD (locked after logger start).
+    std::atomic<bool> printWatches{true};   ///< @brief Print registered watches.
   };
 
   /**
@@ -282,7 +280,7 @@ public:
   struct Drivetrain {
     pros::MotorGroup* leftDrivetrain;   ///< @brief Left drivetrain motors for velocity.
     pros::MotorGroup* rightDrivetrain;  ///< @brief Right drivetrain motors for velocity.
-  };
+  }; 
 
   /**
    * @brief Access the singleton logger instance.
@@ -333,7 +331,7 @@ public:
    * @brief Enable/disable SD logging.
    *
    * @note Many implementations lock SD logging after start() to avoid file
-   *       lifecycle issues. If that applies, calls after start() may no-op.
+   *       lifecycle issues. Calls after start() may fail.
    */
   void setLogToSD(bool v);
 
@@ -381,8 +379,8 @@ public:
    * @param drivetrain drivetrain refs.
    * \return True if refs were accepted (e.g., non-null and consistent).
    *
-   * @note If you do not call this, pose printing and some watchdog features may
-   *       be disabled or will no-op.
+   * @note If you do not call this, drivetrain speed will be approximated from 
+   *       pose. This is not recommended.
    */
   bool setRobot(Drivetrain drivetrain);
 
@@ -391,10 +389,13 @@ public:
   // ------------------------------------------------------------------------
 
   /**
-   * @brief Emit a formatted log message.
+   * @brief Emit a formatted log message. Automatically handles 
+   *        terminal/SD logging.
    *
    * @param level Log severity.
    * @param fmt printf-style format string.
+   * 
+   * @note Messages are truncated to 1024 bytes.
    */
   void logMessage(LogLevel level, const char *fmt, ...);
 
@@ -687,17 +688,24 @@ private:
   bool m_configValid = false; // Is drivetrain config valid?
   
   // Polling intervals  
+
+  /**
+   * @brief SD file flush interval (ms). At 1000ms (default), 
+   *        SD card flushes out of RAM every 1 second.
+  */
+  static constexpr uint32_t SD_FLUSH_INTERVAL_MS = 1000;
+
   /**
    * @brief Controls how often mvlib polls for new data and logs it.
-   *         
+   *
    *
    * @note Time is in ms
    * @note This interval overrides the sd card interval. If logging to 
    *       terminal and to sd card, the terminal polling rate is used.
    *
    * @warning If the polling rate is too fast, it may overwhelm the 
-   *          brain -> controller connection, which would cause the
-   *          connection to be completely dropped and stop outputting.
+   *          brain -> controller connection, which may cause the
+   *          connection to be completely dropped and cease logging.
   */
   static constexpr uint16_t terminalPollingRate = 120;
 
@@ -726,7 +734,7 @@ private:
  * @brief Operator for .watch() intervalMs. Allows number_mvMs 
  *        instead of uint32_t{number}
  *
- * \return explicit uint32_t casted version of the input number
+ * \return Explicit uint32_t casted version of the input number
  *
  * \b Example
  * @code{.cpp}
@@ -741,14 +749,27 @@ constexpr uint32_t operator""_mvMs(unsigned long long int ms) {
  * @brief Operator for .watch() intervalMs. Allows number_mvS 
  *        instead of uint32_t{number}, in seconds form
  *
- * \return explicit uint32_t casted version of the input number, 
+ * \return Explicit uint32_t casted version of the input number, 
  *         times 1000.
  *
  * \b Example
  * @code{.cpp}
- * logger.watch("foo", mvlib::LogLevel::INFO, 10_mvS, ...);
+ * logger.watch("foo", mvlib::LogLevel::INFO, 1.7_mvS, ...);
  * @endcode
 */
-constexpr uint32_t operator""_mvS(unsigned long long int s) {
+constexpr uint32_t operator""_mvS(long double s) {
+    return static_cast<uint32_t>(s * 1000);
+}
+
+/** 
+ * @brief Overload for integer type. Same as mvlib::operator""_mvS, used for
+ *        non-float literals.
+ *
+ * \b Example
+ * @code{.cpp}
+ * logger.watch("foo", mvlib::LogLevel::INFO, 1_mvS, ...);
+ * @endcode
+*/
+constexpr uint32_t operator""_mvS(unsigned long long s) {
     return static_cast<uint32_t>(s * 1000);
 }

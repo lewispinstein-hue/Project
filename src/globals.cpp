@@ -68,8 +68,7 @@ lemlib::Chassis chassis(drivetrain,
 screen::Manager disp;
 mvlib::Logger& logger = mvlib::Logger::getInstance();
 
-
-void handleMisc() {
+void handleController() {
   typedef enum class ControllerButton {
     BTN_NONE,
     BTN_L1,
@@ -165,27 +164,27 @@ void handleMisc() {
 }
 
 void setupWatches() {
-  logger.watch("Left drive temp:", mvlib::LogLevel::INFO, 10_mvS,
+  logger.watch("Left drive temp", mvlib::LogLevel::INFO, 10_mvS,
   []() { return avg<double, float>(left_mg.get_temperature_all()); },
   mvlib::LevelOverride<float>{
     .elevatedLevel = mvlib::LogLevel::WARN,
     .predicate = mvlib::asPredicate<float>([](float v) { return v > 50; }),
-    .label = "High Left Drive Temp:"
+    .label = "High Left Drive Temp"
   }, "%.1f");
 
-  logger.watch("Right Drive Temp:", mvlib::LogLevel::INFO, 10_mvS,
+  logger.watch("Right Drive Temp", mvlib::LogLevel::INFO, 10_mvS,
   []() { return avg<double, float>(right_mg.get_temperature_all()); },
   mvlib::LevelOverride<float>{
     .elevatedLevel = mvlib::LogLevel::WARN,
     .predicate = mvlib::asPredicate<float>([](float v) { return v > 50; }),
-    .label = "High Right Drive Temp:"
+    .label = "High Right Drive Temp"
   }, "%.1f");
 
-  logger.watch("Battery %%:", mvlib::LogLevel::INFO, 30_mvS,
+  logger.watch("Battery %%", mvlib::LogLevel::INFO, 30_mvS,
   []() { return (int)pros::battery::get_capacity(); },
   mvlib::LevelOverride<int>{
     .elevatedLevel = mvlib::LogLevel::WARN,
     .predicate = PREDICATE(v < 30),
-    .label = "Low Battery:"
+    .label = "Low Battery"
   }, "%.0f");
 }

@@ -33,7 +33,7 @@ extern lemlib::Chassis chassis;
 extern screen::Manager disp;
 extern mvlib::Logger& logger;
 
-void handleMisc();
+void handleController();
 void setupWatches();
 
 template<class T, class rtn = double>
